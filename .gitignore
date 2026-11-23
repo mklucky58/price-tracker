@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+config.local.json
+__pycache__/
+*.py[cod]
+*.db
+inspect_page.py

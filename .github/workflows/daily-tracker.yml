@@ -1,0 +1,71 @@
+name: Daily Price Tracker
+
+on:
+  schedule:
+    # Runs every day at 9:00 AM Mountain Time (UTC-7 standard / UTC-6 daylight)
+    # 9 AM MDT = 15:00 UTC  |  9 AM MST = 16:00 UTC
+    # We schedule both and let the script pick the right one (or just pick one)
+    - cron: "0 15 * * *"
+    - cron: "0 16 * * *"
+  workflow_dispatch:   # allow manual runs from GitHub UI
+
+permissions:
+  contents: write    # needed to commit price_history.json back to repo
+
+jobs:
+  track-prices:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Check whether this is the 9 AM Mountain trigger
+        id: schedule
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+
+          event_name = os.environ["EVENT_NAME"]
+          should_run = event_name == "workflow_dispatch"
+
+          if event_name == "schedule":
+              mountain_now = datetime.now(ZoneInfo("America/Edmonton"))
+              offset = mountain_now.utcoffset()
+              utc_hour = (9 - int(offset.total_seconds() // 3600)) % 24
+              expected = f"0 {utc_hour} * * *"
+              should_run = os.environ["SCHEDULE"] == expected
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"run_tracker={str(should_run).lower()}\n")
+          PY
+
+      - name: Run price tracker
+        if: steps.schedule.outputs.run_tracker == 'true'
+        env:
+          EMAIL_USER:      ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS:      ${{ secrets.EMAIL_PASS }}
+          EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+        run: python price_tracker.py
+
+      - name: Commit updated price history
+        if: steps.schedule.outputs.run_tracker == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add price_history.json
+          git diff --cached --quiet || git commit -m "chore: update price history $(date -u +%Y-%m-%d)"
+          git push
