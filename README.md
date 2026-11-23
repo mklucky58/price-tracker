@@ -1,86 +1,91 @@
-# Price Tracker — Setup Guide
+# Price Tracker
 
-## What it does
-- Visits the product page every day
-- Records the price in a local SQLite database (`price_history.db`)
-- Sends you an email if the price **drops**
+Monitors product pages daily and emails you when a price drops.
+Runs free on **GitHub Actions** — no server or PC needed.
 
----
+## How it works
 
-## 1. Configure your email
-
-Open `price_tracker.py` and fill in the `CONFIG` section:
-
-```python
-"email": {
-    "sender":    "your_gmail@gmail.com",
-    "password":  "xxxx xxxx xxxx xxxx",   # Gmail App Password (see below)
-    "recipient": "your_gmail@gmail.com",
-},
 ```
-
-### Getting a Gmail App Password
-1. Go to <https://myaccount.google.com/apppasswords>
-2. Create a new app password (name it "Price Tracker")
-3. Copy the 16-character code and paste it as `password`
-
-> **Note:** 2-Step Verification must be enabled on your Google account first.
-
----
-
-## 2. Add more products
-
-Each product is a dict in `CONFIG["products"]`:
-
-```python
-{
-    "name": "Some Product",
-    "url":  "https://example.com/product-page",
-    "price_selector": None,   # auto-detected, or paste a CSS selector
-    "alert_below": 100.0,     # only alert if price drops below $100 (or None for any drop)
-},
+GitHub Actions (cron 9 AM daily)
+  → runs price_tracker.py
+  → fetches price from product page (via meta tags — reliable, no JS needed)
+  → compares to price_history.json (committed in the repo)
+  → emails you if price dropped
+  → commits updated price_history.json back to repo
 ```
 
 ---
 
-## 3. Test manually
+## Setup: Push to GitHub and add secrets
+
+### 1. Create a new GitHub repo and push
+
+```powershell
+cd "c:\github\price tracker"
+git remote add origin https://github.com/YOUR_USERNAME/price-tracker.git
+git push -u origin master
+```
+
+### 2. Add these GitHub Secrets
+
+Go to your repo → **Settings → Secrets and variables → Actions → New repository secret**
+
+| Secret name | Value |
+|---|---|
+| `EMAIL_USER` | `mklucky01@gmail.com` |
+| `EMAIL_PASS` | your Gmail App Password |
+| `EMAIL_RECIPIENT` | `mklucky01@gmail.com` |
+
+> Your App Password is in `config.local.json` (gitignored, never pushed).
+
+### 3. Enable Actions
+
+Go to your repo → **Actions** tab → click **"I understand my workflows, go ahead and enable them"**
+
+That's it. The workflow runs daily at 9 AM Mountain Time automatically.
+
+---
+
+## Add more products to track
+
+Edit `PRODUCTS` in `price_tracker.py`:
+
+```python
+PRODUCTS = [
+    {
+        "name": "Bear YSH-C18R1",
+        "url":  "https://huarenstore.ca/bear-ysh-c18r1.html",
+        "alert_below": None,   # None = alert on any drop
+    },
+    {
+        "name": "Some Other Product",
+        "url":  "https://example.com/product.html",
+        "alert_below": 50.0,   # only alert if price drops below $50
+    },
+]
+```
+
+Then `git commit` and `git push` — the workflow picks up the change automatically.
+
+---
+
+## Run locally (for testing)
 
 ```powershell
 cd "c:\github\price tracker"
 python price_tracker.py
 ```
 
----
-
-## 4. Schedule daily with Windows Task Scheduler
-
-Run once to create the task (run PowerShell as Administrator):
-
-```powershell
-$action  = New-ScheduledTaskAction -Execute "python" `
-           -Argument '"c:\github\price tracker\price_tracker.py"'
-$trigger = New-ScheduledTaskTrigger -Daily -At "09:00AM"
-Register-ScheduledTask -TaskName "PriceTracker" `
-    -Action $action -Trigger $trigger -RunLevel Highest
-```
-
-The script will run every day at 9 AM and email you if any price drops.
+Credentials are read from `config.local.json` (gitignored).
 
 ---
 
 ## Files
+
 | File | Purpose |
-|------|---------|
+|---|---|
 | `price_tracker.py` | Main script |
-| `price_history.db` | SQLite database (auto-created on first run) |
-| `README.md` | This file |
-
----
-
-## Troubleshooting
-
-| Problem | Fix |
-|---------|-----|
-| "Could not parse a price" | Open the page, right-click the price → Inspect → copy the CSS selector into `price_selector` |
-| Email not sent | Check App Password; make sure 2FA is on |
-| Price always shows wrong value | The site may require JavaScript — open an issue or use Playwright instead of requests |
+| `price_history.json` | Last-known prices (auto-updated by workflow) |
+| `config.local.json` | Local credentials — **never committed** |
+| `.github/workflows/daily-tracker.yml` | GitHub Actions schedule |
+| `requirements.txt` | Python dependencies |
